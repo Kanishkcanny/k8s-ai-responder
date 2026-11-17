@@ -31,20 +31,34 @@ def find_unhealthy_pods(v1):
 
 def collect_evidence(v1, problem):
     ns, name = problem["namespace"], problem["pod"]
-    try:
-        logs = v1.read_namespaced_pod_log(
-            name, ns, container=problem["container"], tail_lines=50, previous=True
-        )
-    except Exception:
+
+    logs = None
+    for previous in (True, False):
         try:
             logs = v1.read_namespaced_pod_log(
-                name, ns, container=problem["container"], tail_lines=50
+                name, ns, container=problem["container"],
+                tail_lines=50, previous=previous,
             )
-        except Exception as e:
-            logs = f"(could not read logs: {e})"
+            if logs:
+                break
+        except Exception:
+            continue
+    if not logs:
+        logs = "(no logs available)"
+
+    exit_info = ""
+    pod = v1.read_namespaced_pod(name, ns)
+    for cs in pod.status.container_statuses or []:
+        t = cs.last_state.terminated
+        if cs.name == problem["container"] and t:
+            exit_info = f"Last exit code: {t.exit_code}, reason: {t.reason}"
+
     events = v1.list_namespaced_event(ns, field_selector=f"involvedObject.name={name}")
-    event_lines = [f"{e.type} {e.reason}: {e.message}" for e in events.items[-10:]]
-    return {"logs": logs, "events": event_lines}
+    all_lines = [f"{e.type} {e.reason}: {e.message}" for e in events.items]
+    useful = [l for l in all_lines if not l.startswith("Normal Pulled")]
+    event_lines = (useful or all_lines)[-10:]
+
+    return {"logs": logs, "exit_info": exit_info, "events": event_lines}
 
 
 def main():
@@ -59,6 +73,8 @@ def main():
         evidence = collect_evidence(v1, p)
         print("--- logs ---")
         print(evidence["logs"])
+        print("--- exit info ---")
+        print(evidence["exit_info"])
         print("--- events ---")
         print("\n".join(evidence["events"]))
 
