@@ -32,33 +32,85 @@ def find_unhealthy_pods(v1):
 def collect_evidence(v1, problem):
     ns, name = problem["namespace"], problem["pod"]
 
+    # 1. Collect container logs
     logs = None
     for previous in (True, False):
         try:
             logs = v1.read_namespaced_pod_log(
-                name, ns, container=problem["container"],
-                tail_lines=50, previous=previous,
+                name,
+                ns,
+                container=problem["container"],
+                tail_lines=50,
+                previous=previous,
             )
             if logs:
                 break
         except Exception:
             continue
+
     if not logs:
         logs = "(no logs available)"
 
-    exit_info = ""
+    # 2. Read pod details
     pod = v1.read_namespaced_pod(name, ns)
+
+    # 3. Collect container configuration
+    container_spec = next(
+        (
+            c for c in pod.spec.containers
+            if c.name == problem["container"]
+        ),
+        None,
+    )
+
+    if container_spec:
+        container_config = {
+            "image": container_spec.image,
+            "command": container_spec.command or [],
+            "args": container_spec.args or [],
+        }
+    else:
+        container_config = {
+            "image": "unknown",
+            "command": [],
+            "args": [],
+        }
+
+    # 4. Collect previous termination details
+    exit_info = ""
     for cs in pod.status.container_statuses or []:
         t = cs.last_state.terminated
         if cs.name == problem["container"] and t:
-            exit_info = f"Last exit code: {t.exit_code}, reason: {t.reason}"
+            exit_info = (
+                f"Last exit code: {t.exit_code}, "
+                f"reason: {t.reason}"
+            )
 
-    events = v1.list_namespaced_event(ns, field_selector=f"involvedObject.name={name}")
-    all_lines = [f"{e.type} {e.reason}: {e.message}" for e in events.items]
-    useful = [l for l in all_lines if not l.startswith("Normal Pulled")]
+    # 5. Collect Kubernetes events
+    events = v1.list_namespaced_event(
+        ns,
+        field_selector=f"involvedObject.name={name}",
+    )
+
+    all_lines = [
+        f"{e.type} {e.reason}: {e.message}"
+        for e in events.items
+    ]
+
+    useful = [
+        line for line in all_lines
+        if not line.startswith("Normal Pulled")
+    ]
+
     event_lines = (useful or all_lines)[-10:]
 
-    return {"logs": logs, "exit_info": exit_info, "events": event_lines}
+    # 6. Return complete incident evidence
+    return {
+        "logs": logs,
+        "exit_info": exit_info,
+        "events": event_lines,
+        "container_config": container_config,
+    }
 
 
 def main():
@@ -77,7 +129,8 @@ def main():
         print(evidence["exit_info"])
         print("--- events ---")
         print("\n".join(evidence["events"]))
-
+        print("--- container config ---")
+        print(evidence["container_config"])
 
 if __name__ == "__main__":
     main()
