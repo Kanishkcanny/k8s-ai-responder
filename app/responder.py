@@ -20,30 +20,45 @@ MODELS = [PRIMARY_MODEL] + FALLBACK_MODELS
 RETRIES = 3
 
 PROMPT = """You are an expert Kubernetes SRE helping an on-call engineer.
-Below is evidence from a failing pod.
+
+You are analyzing evidence from an unhealthy Kubernetes pod.
 
 Rules:
-- Weigh the container logs and the exit code first. Events are secondary.
-- Do not guess causes the evidence does not show.
-- If the logs show the app exited on its own, say so.
+- Prioritize container configuration, logs and exit codes.
+- Use Kubernetes events as supporting evidence.
+- Identify the configured image, command and arguments.
+- Distinguish confirmed facts from possible causes.
+- Never invent a root cause that evidence does not support.
+- Exit code 0 means successful process termination.
+- Non-zero exit codes indicate unsuccessful termination.
+- If the command explicitly contains exit 1, identify it as a direct cause.
+- Do not recommend restarting a container if its command will fail again.
+- Never execute remediation commands automatically.
 
 Respond in this format:
 
-ROOT CAUSE: one or two sentences
+ROOT CAUSE: One or two sentences explaining the failure.
+EVIDENCE: List the exact evidence supporting your diagnosis.
 CONFIDENCE: low / medium / high
-FIX: numbered steps, with kubectl commands where useful
-SAFE TO AUTO-RESTART: yes / no, with a short reason
+FIX: Numbered troubleshooting or correction steps.
+SAFE TO AUTO-RESTART: yes / no, with a short reason.
 
-Pod: {namespace}/{pod} (container: {container})
-Status: {reason}, restarts: {restarts}
+Pod: {namespace}/{pod}
+Container: {container}
+Status: {reason}
+Restarts: {restarts}
 {exit_info}
+
+Container configuration:
+{container_config}
 
 Logs (last lines):
 {logs}
 
-Events:
+Kubernetes events:
 {events}
 """
+
 
 
 def call_model(ai, model, prompt):
@@ -70,6 +85,7 @@ def diagnose(problem, evidence):
         exit_info=evidence["exit_info"],
         logs=evidence["logs"][-3000:],
         events="\n".join(evidence["events"]),
+        container_config=evidence.get("container_config", {}),
     )
     ai = genai.Client()
     for model in MODELS:
