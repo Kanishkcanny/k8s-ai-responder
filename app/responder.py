@@ -34,29 +34,56 @@ Rules:
 - If the command explicitly contains exit 1, identify it as a direct cause.
 - Do not recommend restarting a container if its command will fail again.
 - Never execute remediation commands automatically.
+Incident details:
 
-Respond in this format:
-
-ROOT CAUSE: One or two sentences explaining the failure.
-EVIDENCE: List the exact evidence supporting your diagnosis.
-CONFIDENCE: low / medium / high
-FIX: Numbered troubleshooting or correction steps.
-SAFE TO AUTO-RESTART: yes / no, with a short reason.
-
-Pod: {namespace}/{pod}
+Namespace: {namespace}
+Pod: {pod}
 Container: {container}
 Status: {reason}
 Restarts: {restarts}
+
+Previous termination:
 {exit_info}
 
 Container configuration:
 {container_config}
 
-Logs (last lines):
+Container logs:
 {logs}
 
 Kubernetes events:
 {events}
+
+
+Return ONLY valid JSON. Do not use Markdown code fences.
+
+Use this exact JSON structure:
+
+{{
+    "severity": "CRITICAL / HIGH / MEDIUM / LOW",
+    "root_cause": "Explain the confirmed root cause.",
+    "evidence": [
+        "Exact evidence from Kubernetes"
+    ],
+    "confidence": "HIGH / MEDIUM / LOW",
+    "remediation_steps": [
+        "First troubleshooting step",
+        "Second troubleshooting step"
+    ],
+    "safe_to_auto_restart": false,
+    "restart_reason": "Explain whether restarting is safe."
+}}
+
+Rules:
+- Severity must reflect the actual incident impact.
+- Evidence must come from the supplied data.
+- Never invent missing evidence.
+- Remediation steps must be actionable.
+- Never execute remediation commands.
+- safe_to_auto_restart must be a boolean.
+- If evidence is insufficient, say so.
+- Return valid JSON only.
+
 """
 
 
